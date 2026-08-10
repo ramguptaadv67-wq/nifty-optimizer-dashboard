@@ -1,0 +1,99 @@
+//@version=5
+strategy("NIFTY Engulfing Doji TSL Optimized", overlay=true, calc_on_every_tick=true)
+
+engulf_min = input.int(16, "Engulfing Min Body (pts)", minval=0, maxval=99)
+doji_body_max = input.int(16, "Max Doji Body (pts)", minval=0, maxval=99)
+activation_pts = input.int(12, "Activate At", minval=0, maxval=99)
+lock_profit = input.int(8, "Lock Profit At", minval=0, maxval=99)
+profit_step = input.int(6, "Increase Profit By", minval=0, maxval=99)
+trail_step = input.int(6, "Increase TSL By", minval=0, maxval=99)
+
+body() => math.abs(close - open)
+isBull() => close > open
+isBear() => close < open
+
+bull_engulf = isBull() and isBear()[1] and close > open[1] and open < close[1] and body() >= engulf_min
+bear_engulf = isBear() and isBull()[1] and close < open[1] and open > close[1] and body() >= engulf_min
+
+var float setup_line = na
+
+if bull_engulf
+    setup_line := (open + close) / 2
+
+if bear_engulf
+    setup_line := (open + close) / 2
+
+valid = not na(setup_line)
+
+is_doji = body() <= doji_body_max and (high - low) >= body() * 2
+touches_line = valid and high >= setup_line and low <= setup_line
+green_doji = is_doji and close > open
+red_doji = is_doji and close < open
+
+ce_signal = touches_line and green_doji
+pe_signal = touches_line and red_doji
+
+flat = strategy.position_size == 0
+
+if ce_signal and flat
+    strategy.entry("CALL", strategy.long)
+
+if pe_signal and flat
+    strategy.entry("PUT", strategy.short)
+
+var float long_hh = na
+var float short_ll = na
+var float long_tsl = na
+var float short_tsl = na
+
+isLong = strategy.position_size > 0
+isShort = strategy.position_size < 0
+newLong = isLong and strategy.position_size[1] <= 0
+newShort = isShort and strategy.position_size[1] >= 0
+entry_price = strategy.position_avg_price
+
+if newLong
+    long_hh := high
+    long_tsl := na
+
+if isLong and not newLong
+    if (high - entry_price) >= activation_pts
+        long_hh := na(long_hh) ? high : math.max(long_hh, high)
+        extraProfit = math.max(0.0, long_hh - entry_price - activation_pts)
+        tslMove = profit_step > 0 ? math.floor(extraProfit / profit_step) * trail_step : 0
+        long_tsl := entry_price + lock_profit + tslMove
+    else
+        long_tsl := na
+
+if not isLong
+    long_hh := na
+    long_tsl := na
+
+if newShort
+    short_ll := low
+    short_tsl := na
+
+if isShort and not newShort
+    if (entry_price - low) >= activation_pts
+        short_ll := na(short_ll) ? low : math.min(short_ll, low)
+        extraProfit = math.max(0.0, entry_price - short_ll - activation_pts)
+        tslMove = profit_step > 0 ? math.floor(extraProfit / profit_step) * trail_step : 0
+        short_tsl := entry_price - lock_profit - tslMove
+    else
+        short_tsl := na
+
+if not isShort
+    short_ll := na
+    short_tsl := na
+
+if isLong and not na(long_tsl)
+    strategy.exit("CALL TSL", from_entry="CALL", stop=long_tsl)
+
+if isShort and not na(short_tsl)
+    strategy.exit("PUT TSL", from_entry="PUT", stop=short_tsl)
+
+plot(setup_line, title="Setup Line", color=color.yellow, linewidth=2, style=plot.style_linebr)
+plotshape(ce_signal, title="CE", style=shape.labelup, color=color.green, text="CE", textcolor=color.white, location=location.belowbar, size=size.small)
+plotshape(pe_signal, title="PE", style=shape.labeldown, color=color.red, text="PE", textcolor=color.white, location=location.abovebar, size=size.small)
+plot(long_tsl, title="Long TSL", color=color.green, linewidth=2, style=plot.style_linebr)
+plot(short_tsl, title="Short TSL", color=color.red, linewidth=2, style=plot.style_linebr)
