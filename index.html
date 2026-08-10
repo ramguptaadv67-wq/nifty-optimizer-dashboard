@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NIFTY Strategy Optimizer</title>
+<link rel="stylesheet" href="css/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<header>
+  <h1>NIFTY Engulfing-Doji-TSL Optimizer</h1>
+  <p>Sweep all 6 parameters 0-99 — find the best config across any timeframe</p>
+</header>
+
+<section id="data-section" class="card">
+  <h2>1. Load Market Data</h2>
+  <div class="row">
+    <div class="input-group">
+      <label>Symbol</label>
+      <select id="symbol">
+        <option value="^NSEI">NIFTY 50 (^NSEI)</option>
+        <option value="^BSESN">SENSEX (^BSESN)</option>
+        <option value="BTC-USD">Bitcoin (BTC-USD)</option>
+        <option value="ETH-USD">Ethereum (ETH-USD)</option>
+        <option value="AAPL">Apple (AAPL)</option>
+        <option value="TSLA">Tesla (TSLA)</option>
+        <option value="RELIANCE.NS">Reliance (RELIANCE.NS)</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Timeframe</label>
+      <select id="interval">
+        <option value="1m">1 Minute</option>
+        <option value="3m">3 Minutes</option>
+        <option value="5m" selected>5 Minutes</option>
+        <option value="15m">15 Minutes</option>
+        <option value="30m">30 Minutes</option>
+        <option value="60m">1 Hour</option>
+        <option value="1d">1 Day</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>History Range</label>
+      <select id="range">
+        <option value="1d">1 Day</option>
+        <option value="7d">7 Days</option>
+        <option value="30d">30 Days</option>
+        <option value="60d" selected>60 Days</option>
+        <option value="6mo">6 Months</option>
+        <option value="1y">1 Year</option>
+      </select>
+    </div>
+    <button id="fetchBtn" class="btn-primary">Fetch Data</button>
+    <label class="upload-label">or upload CSV
+      <input type="file" id="csvFile" accept=".csv" hidden>
+    </label>
+  </div>
+  <div id="dataStatus" class="status"></div>
+</section>
+
+<section id="opt-section" class="card hidden">
+  <h2>2. Run Optimization</h2>
+  <div class="row">
+    <div class="input-group">
+      <label>Method</label>
+      <select id="method">
+        <option value="random">Random Search (fast)</option>
+        <option value="grid">Grid Search (exhaustive)</option>
+      </select>
+    </div>
+    <div class="input-group" id="trialsGroup">
+      <label>Trials</label>
+      <input type="number" id="trials" value="2000" min="100" max="100000" step="100">
+    </div>
+    <div class="input-group hidden" id="stepGroup">
+      <label>Grid Step</label>
+      <input type="number" id="step" value="25" min="5" max="50" step="5">
+    </div>
+    <div class="input-group">
+      <label>Objective</label>
+      <select id="objective">
+        <option value="netPnl">Max Net P&L</option>
+        <option value="sharpe">Max Sharpe</option>
+        <option value="profitFactor">Max Profit Factor</option>
+        <option value="returnPct">Max Return %</option>
+      </select>
+    </div>
+    <div class="input-group">
+      <label>Min Trades</label>
+      <input type="number" id="minTrades" value="5" min="0" max="100">
+    </div>
+    <button id="optimizeBtn" class="btn-primary">Run Optimization</button>
+  </div>
+  <div id="optProgress" class="progress-bar hidden">
+    <div id="optProgressBar"></div>
+  </div>
+  <div id="optStatus" class="status"></div>
+</section>
+
+<section id="results-section" class="card hidden">
+  <h2>3. Top Results</h2>
+  <div class="metrics-grid" id="topMetrics"></div>
+  <div class="chart-container">
+    <h3>Equity Curve — Top Result</h3>
+    <canvas id="equityChart"></canvas>
+  </div>
+  <div class="results-table-container">
+    <table id="resultsTable" class="results-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Net P&L</th>
+          <th>Return %</th>
+          <th>Trades</th>
+          <th>Win %</th>
+          <th>Profit Factor</th>
+          <th>Max DD %</th>
+          <th>Sharpe</th>
+          <th>Engulf</th>
+          <th>Doji</th>
+          <th>Activate</th>
+          <th>Lock</th>
+          <th>Step</th>
+          <th>TSL</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<section id="trades-section" class="card hidden">
+  <h2>4. Trade Log — Top Result</h2>
+  <div class="results-table-container">
+    <table class="results-table">
+      <thead>
+        <tr><th>#</th><th>Dir</th><th>Entry</th><th>Exit</th><th>P&L</th></tr>
+      </thead>
+      <tbody id="tradesBody"></tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <p>NIFTY Engulfing-Doji-TSL Optimizer — runs fully in your browser. No data leaves your device.</p>
+  <p>For educational purposes only. Not financial advice.</p>
+</footer>
+
+<script src="js/backtest.js"></script>
+<script src="js/worker.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
