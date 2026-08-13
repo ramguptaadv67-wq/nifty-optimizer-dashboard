@@ -60,7 +60,8 @@ async function fetchData() {
   const interval = document.getElementById("interval").value;
   const fromDate = document.getElementById("fromDate").value;
   const toDate = document.getElementById("toDate").value;
-  const tdKey = document.getElementById("tdKey"). ? document.getElementById("tdKey").value.trim() : "";
+  const tdKeyInput = document.getElementById("tdKey");
+  const tdKey = tdKeyInput ? tdKeyInput.value.trim() : "";
   const status = document.getElementById("dataStatus");
   const btn = document.getElementById("fetchBtn");
 
@@ -74,7 +75,6 @@ async function fetchData() {
     return;
   }
 
-  const diffDays = Math.round((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24));
   const yahooRange = dateRangeToYahooRange(fromDate, toDate);
 
   btn.disabled = true;
@@ -91,7 +91,7 @@ async function fetchData() {
       const data = await resp.json();
 
       if (!data.chart || !data.chart.result) {
-        const errMsg = data.chart?.error?.description || "No data returned";
+        const errMsg = (data.chart && data.chart.error && data.chart.error.description) || "No data returned";
         throw new Error(errMsg);
       }
 
@@ -160,10 +160,7 @@ async function fetchData() {
   } catch (err) {
     status.innerHTML = `<span style="color:var(--red)">✗</span> Fetch failed: ${err.message}`;
     if (err.message.includes("60 days") || err.message.includes("Twelve Data")) {
-      status.innerHTML += `<br><span style="color:var(--muted)">💡 Get a free key at twelvedata.com/pricing — free tier: 800 requests/day, 8/min</span>`;
-    }
-    if (err.message.includes("CORS") || err.message.includes("failed")) {
-      status.innerHTML += `<br><span style="color:var(--muted)">💡 You can still upload a CSV file instead.</span>`;
+      status.innerHTML += `<br><span style="color:var(--muted)">Get a free key at twelvedata.com/pricing — free tier: 800 requests/day, 8/min</span>`;
     }
   }
   btn.textContent = "Fetch Data";
