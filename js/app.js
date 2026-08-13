@@ -360,6 +360,41 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("csvFile").addEventListener("change", handleCSVUpload);
   document.getElementById("optimizeBtn").addEventListener("click", runOptimization);
 
+  document.getElementById("sampleData").addEventListener("change", async function() {
+    const filename = this.value;
+    if (!filename) return;
+    const status = document.getElementById("dataStatus");
+    status.textContent = "Loading sample data: " + filename + "...";
+    try {
+      const resp = await fetch("data/" + filename);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const text = await resp.text();
+      const lines = text.trim().split("\n");
+      const header = lines[0].toLowerCase().split(",").map(s => s.trim());
+      const idx = {};
+      ["datetime","open","high","low","close","volume"].forEach(col => {
+        idx[col] = header.findIndex(h => h.includes(col));
+      });
+      currentCandles = [];
+      for (let i = 1; i < lines.length; i++) {
+        const parts = lines[i].split(",");
+        if (parts.length < 5) continue;
+        currentCandles.push({
+          datetime: idx.datetime >= 0 ? new Date(parts[idx.datetime]) : new Date(i * 60000),
+          open: parseFloat(parts[idx.open]),
+          high: parseFloat(parts[idx.high]),
+          low: parseFloat(parts[idx.low]),
+          close: parseFloat(parts[idx.close]),
+          volume: idx.volume >= 0 ? parseFloat(parts[idx.volume]) : 0,
+        });
+      }
+      status.innerHTML = '<span style="color:var(--green)">✓</span> Loaded ' + currentCandles.length + ' bars from ' + filename + ' | ' + currentCandles[0].datetime.toLocaleDateString() + ' → ' + currentCandles[currentCandles.length-1].datetime.toLocaleDateString();
+      document.getElementById("opt-section").classList.remove("hidden");
+    } catch (err) {
+      status.innerHTML = '<span style="color:var(--red)">✗</span> Failed: ' + err.message;
+    }
+  });
+
   document.getElementById("method").addEventListener("change", function() {
     if (this.value === "grid") {
       document.getElementById("trialsGroup").classList.add("hidden");

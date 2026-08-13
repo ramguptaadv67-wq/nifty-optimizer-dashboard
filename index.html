@@ -12,7 +12,7 @@
 <header>
   <h1>NIFTY Engulfing-Doji-TSL Optimizer</h1>
   <p>Sweep all 6 parameters 0-99 — find the best config across any timeframe</p>
-  <p class="version">v2.4</p>
+  <p class="version">v2.5</p>
 </header>
 
 <section id="data-section" class="card">
@@ -53,6 +53,22 @@
     <div class="input-group">
       <label>Twelve Data Key <span style="text-transform:none;font-weight:400">(only for >60 days)</span></label>
       <input type="text" id="tdKey" placeholder="Free key from twelvedata.com">
+    </div>
+    <div class="input-group">
+      <label>Sample Data</label>
+      <select id="sampleData">
+        <option value="">— Select —</option>
+        <option value="NIFTY_5m_1mo.csv">NIFTY 5m (1 month, 1700 bars)</option>
+        <option value="NIFTY_1m_7days.csv">NIFTY 1m (7 days, 2600 bars)</option>
+        <option value="NIFTY_3m_7days.csv">NIFTY 3m (7 days, 870 bars)</option>
+        <option value="NIFTY_5m_7days.csv">NIFTY 5m (7 days, 520 bars)</option>
+        <option value="NIFTY_15m_1mo.csv">NIFTY 15m (1 month, 570 bars)</option>
+        <option value="NIFTY_30m_1mo.csv">NIFTY 30m (1 month, 300 bars)</option>
+        <option value="NIFTY_1h_6months.csv">NIFTY 1h (6 months, 840 bars)</option>
+        <option value="NIFTY_1h_1year.csv">NIFTY 1h (1 year, 1700 bars)</option>
+        <option value="NIFTY_daily_2years.csv">NIFTY Daily (2 years, 490 bars)</option>
+        <option value="NIFTY_daily_5years.csv">NIFTY Daily (5 years, 1230 bars)</option>
+      </select>
     </div>
     <button id="fetchBtn" class="btn-primary">Fetch Data</button>
     <label class="upload-label">or upload CSV
@@ -151,7 +167,7 @@
 </section>
 
 <footer>
-  <p>NIFTY Engulfing-Doji-TSL Optimizer v2.4 — Yahoo (≤60 days, no key) + Twelve Data (>60 days, free key), optimization runs in browser.</p>
+  <p>NIFTY Engulfing-Doji-TSL Optimizer v2.5 — Yahoo (≤60 days, no key) + Twelve Data (>60 days, free key), optimization runs in browser.</p>
   <p>For educational purposes only. Not financial advice.</p>
 </footer>
 
