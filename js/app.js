@@ -6,15 +6,15 @@
 let currentCandles = [];
 let equityChart = null;
 
-// === DEFAULT DATES ===
+// === DEFAULT DATES (60 days — works with Yahoo, no API key needed) ===
 
 function initDefaultDates() {
   const today = new Date();
-  const ninetyDaysAgo = new Date();
-  ninetyDaysAgo.setDate(today.getDate() - 90);
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(today.getDate() - 60);
 
   document.getElementById("toDate").value = today.toISOString().split("T")[0];
-  document.getElementById("fromDate").value = ninetyDaysAgo.toISOString().split("T")[0];
+  document.getElementById("fromDate").value = sixtyDaysAgo.toISOString().split("T")[0];
 }
 
 // === Convert From/To dates to Yahoo Finance range string ===
@@ -28,7 +28,7 @@ function dateRangeToYahooRange(fromDate, toDate) {
   if (diffDays <= 5) return "5d";
   if (diffDays <= 30) return "1mo";
   if (diffDays <= 60) return "3mo";
-  return null; // Too long for Yahoo intraday
+  return null; // Too long for Yahoo intraday — needs Twelve Data
 }
 
 // === Map Yahoo interval to Twelve Data interval ===
@@ -83,7 +83,7 @@ async function fetchData() {
 
   try {
     if (yahooRange) {
-      // === Use Yahoo Finance (≤60 days) ===
+      // === Use Yahoo Finance (≤60 days, no API key needed) ===
       status.textContent = `Fetching from Yahoo Finance (range: ${yahooRange})...`;
       const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&range=${yahooRange}`;
       const resp = await fetch(proxyUrl);
@@ -120,9 +120,9 @@ async function fetchData() {
       document.getElementById("opt-section").classList.remove("hidden");
 
     } else {
-      // === Use Twelve Data (>60 days, needs API key) ===
+      // === Use Twelve Data (>60 days, needs free API key) ===
       if (!tdKey) {
-        throw new Error("Date range > 60 days needs a free Twelve Data API key. Get one at twelvedata.com — takes 30 seconds.");
+        throw new Error("Date range is over 60 days. For longer history you need a free Twelve Data API key (30-second signup at twelvedata.com). Or select a date range within 60 days to use Yahoo Finance without a key.");
       }
 
       const tdSym = yahooToTDSymbol(symbol);
@@ -158,9 +158,9 @@ async function fetchData() {
     }
 
   } catch (err) {
-    status.innerHTML = `<span style="color:var(--red)">✗</span> Fetch failed: ${err.message}`;
-    if (err.message.includes("60 days") || err.message.includes("Twelve Data")) {
-      status.innerHTML += `<br><span style="color:var(--muted)">Get a free key at twelvedata.com/pricing — free tier: 800 requests/day, 8/min</span>`;
+    status.innerHTML = `<span style="color:var(--red)">✗</span> ${err.message}`;
+    if (!yahooRange && !tdKey) {
+      status.innerHTML += `<br><span style="color:var(--muted)">Option 1: Select dates within 60 days → uses Yahoo (no key needed)<br>Option 2: Get free key at twelvedata.com → supports years of data<br>Option 3: Upload a CSV file</span>`;
     }
   }
   btn.textContent = "Fetch Data";
