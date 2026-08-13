@@ -2,8 +2,8 @@
  * Cloudflare Worker — serves static dashboard files + acts as CORS proxy for Yahoo Finance.
  *
  * Routes:
- *   /api/yahoo?sym=^NSEI&interval=5m&period1=1234567890&period2=1234567890
- *   /  (and all other paths) → serves static assets
+ *   /api/yahoo?sym=^NSEI&interval=5m&range=3mo  → fetches Yahoo Finance server-side
+ *   /  (and all other paths)                     → serves static assets
  */
 export default {
   async fetch(request, env) {
@@ -24,16 +24,11 @@ export default {
     if (url.pathname === "/api/yahoo") {
       const sym = url.searchParams.get("sym") || "^NSEI";
       const interval = url.searchParams.get("interval") || "5m";
-      const period1 = url.searchParams.get("period1");
-      const period2 = url.searchParams.get("period2");
-      const range = url.searchParams.get("range");
+      const range = url.searchParams.get("range") || "3mo";
 
-      let yahooUrl;
-      if (period1 && period2) {
-        yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?period1=${period1}&period2=${period2}&interval=${interval}`;
-      } else {
-        yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${range || "60d"}&interval=${interval}`;
-      }
+      // URL-encode the symbol (^ becomes %5E) for the fetch URL
+      const encodedSym = encodeURIComponent(sym);
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodedSym}?range=${range}&interval=${interval}`;
 
       try {
         const resp = await fetch(yahooUrl, {
