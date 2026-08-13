@@ -1,27 +1,53 @@
 /**
  * Main app logic — handles data fetching, UI updates, and optimization.
  * Fetches market data via the built-in Cloudflare Worker CORS proxy.
+ * Supports custom From/To date range.
  */
 
 let currentCandles = [];
 let equityChart = null;
+
+// === DEFAULT DATES ===
+
+function initDefaultDates() {
+  const today = new Date();
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(today.getDate() - 60);
+
+  document.getElementById("toDate").value = today.toISOString().split("T")[0];
+  document.getElementById("fromDate").value = sixtyDaysAgo.toISOString().split("T")[0];
+}
 
 // === DATA FETCHING ===
 
 async function fetchData() {
   const symbol = document.getElementById("symbol").value;
   const interval = document.getElementById("interval").value;
-  const range = document.getElementById("range").value;
+  const fromDate = document.getElementById("fromDate").value;
+  const toDate = document.getElementById("toDate").value;
   const status = document.getElementById("dataStatus");
   const btn = document.getElementById("fetchBtn");
 
+  if (!fromDate || !toDate) {
+    status.innerHTML = '<span style="color:var(--red)">✗</span> Please select both From and To dates.';
+    return;
+  }
+
+  const period1 = Math.floor(new Date(fromDate).getTime() / 1000);
+  const period2 = Math.floor(new Date(toDate).getTime() / 1000);
+
+  if (period2 <= period1) {
+    status.innerHTML = '<span style="color:var(--red)">✗</span> To Date must be after From Date.';
+    return;
+  }
+
   btn.disabled = true;
   btn.textContent = "Fetching...";
-  status.textContent = `Fetching ${symbol} ${interval} data via proxy...`;
+  status.textContent = `Fetching ${symbol} ${interval} data from ${fromDate} to ${toDate}...`;
 
   try {
-    // Call the built-in Cloudflare Worker CORS proxy (no CORS errors, 100% reliable)
-    const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`;
+    // Call the built-in Cloudflare Worker CORS proxy with period1/period2
+    const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&period1=${period1}&period2=${period2}`;
     const resp = await fetch(proxyUrl);
     if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
     const data = await resp.json();
@@ -101,7 +127,7 @@ function runOptimization() {
 
   const method = document.getElementById("method").value;
   const nTrials = parseInt(document.getElementById("trials").value);
-  const step = parseInt(document.getElementById("step").value);
+  const band = document.getElementById("band").value;
   const minTrades = parseInt(document.getElementById("minTrades").value);
   const objective = document.getElementById("objective").value;
 
@@ -121,7 +147,7 @@ function runOptimization() {
     if (e.data.type === "progress") {
       const pct = (e.data.count / e.data.total) * 100;
       progressFill.style.width = pct + "%";
-      status.textContent = `Grid search: ${e.data.count}/${e.data.total} (${pct.toFixed(1)}%)`;
+      status.textContent = `Optimization: ${e.data.count}/${e.data.total} (${pct.toFixed(1)}%)`;
     } else if (e.data.type === "done") {
       const results = e.data.results;
       progressFill.style.width = "100%";
@@ -136,7 +162,7 @@ function runOptimization() {
     }
   };
 
-  worker.postMessage({ candles: currentCandles, method, nTrials, step, minTrades, objective });
+  worker.postMessage({ candles: currentCandles, method, nTrials, band, minTrades, objective });
 }
 
 // === DISPLAY RESULTS — TOP 7 ===
@@ -241,6 +267,7 @@ function displayResults(results, objective) {
 // === EVENT LISTENERS ===
 
 document.addEventListener("DOMContentLoaded", function() {
+  initDefaultDates();
   document.getElementById("fetchBtn").addEventListener("click", fetchData);
   document.getElementById("csvFile").addEventListener("change", handleCSVUpload);
   document.getElementById("optimizeBtn").addEventListener("click", runOptimization);
@@ -248,10 +275,10 @@ document.addEventListener("DOMContentLoaded", function() {
   document.getElementById("method").addEventListener("change", function() {
     if (this.value === "grid") {
       document.getElementById("trialsGroup").classList.add("hidden");
-      document.getElementById("stepGroup").classList.remove("hidden");
+      document.getElementById("bandGroup").classList.remove("hidden");
     } else {
       document.getElementById("trialsGroup").classList.remove("hidden");
-      document.getElementById("stepGroup").classList.add("hidden");
+      document.getElementById("bandGroup").classList.add("hidden");
     }
   });
 });
