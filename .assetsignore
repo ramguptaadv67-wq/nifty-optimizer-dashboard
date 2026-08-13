@@ -1,0 +1,9 @@
+_worker.js
+wrangler.toml
+.gitignore
+.assetsignore
+_headers
+python/
+strategies/
+README.md
+requirements.txt
