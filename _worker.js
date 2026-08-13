@@ -1,20 +1,39 @@
 /**
  * Cloudflare Worker — serves static dashboard files + acts as CORS proxy for Yahoo Finance.
- * 
+ *
  * Routes:
- *   /api/yahoo?sym=BTC-USD&interval=5m&range=60d  → fetches Yahoo Finance server-side
- *   /  (and all other paths)                        → serves static assets
+ *   /api/yahoo?sym=^NSEI&interval=5m&period1=1234567890&period2=1234567890
+ *   /  (and all other paths) → serves static assets
  */
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        },
+      });
+    }
+
     // === CORS PROXY for Yahoo Finance ===
     if (url.pathname === "/api/yahoo") {
       const sym = url.searchParams.get("sym") || "^NSEI";
       const interval = url.searchParams.get("interval") || "5m";
-      const range = url.searchParams.get("range") || "60d";
-      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${range}&interval=${interval}`;
+      const period1 = url.searchParams.get("period1");
+      const period2 = url.searchParams.get("period2");
+      const range = url.searchParams.get("range");
+
+      let yahooUrl;
+      if (period1 && period2) {
+        yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?period1=${period1}&period2=${period2}&interval=${interval}`;
+      } else {
+        yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${sym}?range=${range || "60d"}&interval=${interval}`;
+      }
 
       try {
         const resp = await fetch(yahooUrl, {
@@ -39,12 +58,10 @@ export default {
 
     // === SERVE STATIC ASSETS ===
     if (env.ASSETS) {
-      // Try the exact path first
       const response = await env.ASSETS.fetch(request);
       if (response.status !== 404) {
         return response;
       }
-      // Fallback to index.html for SPA routing
       return env.ASSETS.fetch(new Request(new URL("/", request.url), request));
     }
 
