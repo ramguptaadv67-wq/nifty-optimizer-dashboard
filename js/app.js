@@ -1,7 +1,6 @@
 /**
  * Main app logic — handles data fetching, UI updates, and optimization.
- * Fetches market data via the built-in Cloudflare Worker CORS proxy.
- * Uses From/To date pickers converted to Yahoo Finance range strings.
+ * Uses Yahoo Finance for ≤60 day ranges, Twelve Data for >60 day ranges.
  */
 
 let currentCandles = [];
@@ -28,13 +27,30 @@ function dateRangeToYahooRange(fromDate, toDate) {
   if (diffDays <= 1) return "1d";
   if (diffDays <= 5) return "5d";
   if (diffDays <= 30) return "1mo";
-  if (diffDays <= 90) return "3mo";
-  if (diffDays <= 180) return "6mo";
-  if (diffDays <= 365) return "1y";
-  if (diffDays <= 730) return "2y";
-  if (diffDays <= 1825) return "5y";
-  if (diffDays <= 3650) return "10y";
-  return "max";
+  if (diffDays <= 60) return "3mo";
+  return null; // Too long for Yahoo intraday
+}
+
+// === Map Yahoo interval to Twelve Data interval ===
+
+function yahooToTDInterval(yahooInterval) {
+  const map = { "1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "60m": "60min", "1d": "1day" };
+  return map[yahooInterval] || "5min";
+}
+
+// === Map Yahoo symbol to Twelve Data symbol ===
+
+function yahooToTDSymbol(yahooSym) {
+  const map = {
+    "^NSEI": "NIFTY 50",
+    "^BSESN": "SENSEX",
+    "BTC-USD": "BTC/USD",
+    "ETH-USD": "ETH/USD",
+    "AAPL": "AAPL",
+    "TSLA": "TSLA",
+    "RELIANCE.NS": "RELIANCE",
+  };
+  return map[yahooSym] || yahooSym;
 }
 
 // === DATA FETCHING ===
@@ -44,6 +60,7 @@ async function fetchData() {
   const interval = document.getElementById("interval").value;
   const fromDate = document.getElementById("fromDate").value;
   const toDate = document.getElementById("toDate").value;
+  const tdKey = document.getElementById("tdKey"). ? document.getElementById("tdKey").value.trim() : "";
   const status = document.getElementById("dataStatus");
   const btn = document.getElementById("fetchBtn");
 
@@ -57,52 +74,97 @@ async function fetchData() {
     return;
   }
 
-  // Convert date range to Yahoo Finance range string
-  const range = dateRangeToYahooRange(fromDate, toDate);
+  const diffDays = Math.round((new Date(toDate) - new Date(fromDate)) / (1000 * 60 * 60 * 24));
+  const yahooRange = dateRangeToYahooRange(fromDate, toDate);
 
   btn.disabled = true;
   btn.textContent = "Fetching...";
-  status.textContent = `Fetching ${symbol} ${interval} data (range: ${range})...`;
+  status.textContent = `Fetching ${symbol} ${interval} data...`;
 
   try {
-    // Call the built-in Cloudflare Worker CORS proxy
-    const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`;
-    const resp = await fetch(proxyUrl);
-    if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
-    const data = await resp.json();
+    if (yahooRange) {
+      // === Use Yahoo Finance (≤60 days) ===
+      status.textContent = `Fetching from Yahoo Finance (range: ${yahooRange})...`;
+      const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&range=${yahooRange}`;
+      const resp = await fetch(proxyUrl);
+      if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
+      const data = await resp.json();
 
-    if (!data.chart || !data.chart.result) {
-      const errMsg = data.chart?.error?.description || "No data returned";
-      throw new Error(errMsg);
+      if (!data.chart || !data.chart.result) {
+        const errMsg = data.chart?.error?.description || "No data returned";
+        throw new Error(errMsg);
+      }
+
+      const r = data.chart.result[0];
+      const ts = r.timestamp;
+      const q = r.indicators.quote[0];
+
+      currentCandles = [];
+      for (let i = 0; i < ts.length; i++) {
+        if (q.open[i] == null) continue;
+        currentCandles.push({
+          datetime: new Date(ts[i] * 1000),
+          open: q.open[i], high: q.high[i], low: q.low[i],
+          close: q.close[i], volume: q.volume[i],
+        });
+      }
+
+      // Filter to selected date range
+      const fromMs = new Date(fromDate).getTime();
+      const toMs = new Date(toDate).getTime() + 86400000;
+      currentCandles = currentCandles.filter(c => c.datetime.getTime() >= fromMs && c.datetime.getTime() <= toMs);
+
+      if (currentCandles.length === 0) throw new Error("No candles in selected date range");
+
+      status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars (Yahoo) | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
+      document.getElementById("opt-section").classList.remove("hidden");
+
+    } else {
+      // === Use Twelve Data (>60 days, needs API key) ===
+      if (!tdKey) {
+        throw new Error("Date range > 60 days needs a free Twelve Data API key. Get one at twelvedata.com — takes 30 seconds.");
+      }
+
+      const tdSym = yahooToTDSymbol(symbol);
+      const tdInterval = yahooToTDInterval(interval);
+      status.textContent = `Fetching from Twelve Data (${tdSym}, ${tdInterval})...`;
+
+      const proxyUrl = `/api/twelvedata?sym=${encodeURIComponent(tdSym)}&interval=${tdInterval}&start=${fromDate}&end=${toDate}&apikey=${encodeURIComponent(tdKey)}`;
+      const resp = await fetch(proxyUrl);
+      if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
+      const data = await resp.json();
+
+      if (data.status === "error") {
+        throw new Error(data.message || data.code || "Twelve Data API error");
+      }
+
+      if (!data.values || data.values.length === 0) {
+        throw new Error("No data returned from Twelve Data");
+      }
+
+      // Twelve Data returns newest first — reverse to oldest first
+      const values = data.values.reverse();
+      currentCandles = values.map(v => ({
+        datetime: new Date(v.datetime),
+        open: parseFloat(v.open),
+        high: parseFloat(v.high),
+        low: parseFloat(v.low),
+        close: parseFloat(v.close),
+        volume: 0,
+      }));
+
+      status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars (Twelve Data) | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
+      document.getElementById("opt-section").classList.remove("hidden");
     }
 
-    const r = data.chart.result[0];
-    const ts = r.timestamp;
-    const q = r.indicators.quote[0];
-
-    currentCandles = [];
-    for (let i = 0; i < ts.length; i++) {
-      if (q.open[i] == null) continue;
-      currentCandles.push({
-        datetime: new Date(ts[i] * 1000),
-        open: q.open[i], high: q.high[i], low: q.low[i],
-        close: q.close[i], volume: q.volume[i],
-      });
-    }
-
-    if (currentCandles.length === 0) throw new Error("No valid candles in response");
-
-    // Filter candles to the selected date range
-    const fromMs = new Date(fromDate).getTime();
-    const toMs = new Date(toDate).getTime() + 86400000; // include full To day
-    currentCandles = currentCandles.filter(c => c.datetime.getTime() >= fromMs && c.datetime.getTime() <= toMs);
-
-    if (currentCandles.length === 0) throw new Error("No candles in selected date range");
-
-    status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
-    document.getElementById("opt-section").classList.remove("hidden");
   } catch (err) {
-    status.innerHTML = `<span style="color:var(--red)">✗</span> Fetch failed: ${err.message}. Try uploading a CSV file instead.`;
+    status.innerHTML = `<span style="color:var(--red)">✗</span> Fetch failed: ${err.message}`;
+    if (err.message.includes("60 days") || err.message.includes("Twelve Data")) {
+      status.innerHTML += `<br><span style="color:var(--muted)">💡 Get a free key at twelvedata.com/pricing — free tier: 800 requests/day, 8/min</span>`;
+    }
+    if (err.message.includes("CORS") || err.message.includes("failed")) {
+      status.innerHTML += `<br><span style="color:var(--muted)">💡 You can still upload a CSV file instead.</span>`;
+    }
   }
   btn.textContent = "Fetch Data";
   btn.disabled = false;
