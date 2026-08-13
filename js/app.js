@@ -5,6 +5,18 @@
 let currentCandles = [];
 let equityChart = null;
 
+// Multiple CORS proxy fallbacks — if one fails, try the next
+const CORS_PROXIES = [
+  // allorigins — most reliable free proxy, wraps response in JSON
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  // corsproxy.io
+  (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  // codetabs
+  (url) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
+  // thingproxy
+  (url) => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
+
 // === DATA FETCHING ===
 
 async function fetchData() {
@@ -18,65 +30,76 @@ async function fetchData() {
   btn.textContent = "Fetching...";
   status.textContent = `Fetching ${symbol} ${interval} data...`;
 
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`;
+
+  // Try direct fetch first (works if user has CORS disabled or local file)
+  let data = null;
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-
-    if (!data.chart || !data.chart.result) throw new Error("No data returned");
-
-    const r = data.chart.result[0];
-    const ts = r.timestamp;
-    const q = r.indicators.quote[0];
-
-    currentCandles = [];
-    for (let i = 0; i < ts.length; i++) {
-      if (q.open[i] == null) continue;
-      currentCandles.push({
-        datetime: new Date(ts[i] * 1000),
-        open: q.open[i], high: q.high[i], low: q.low[i],
-        close: q.close[i], volume: q.volume[i],
-      });
+    const resp = await fetch(yahooUrl);
+    if (resp.ok) {
+      data = await resp.json();
+      if (!data.chart || !data.chart.result) data = null;
     }
-
-    status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
-    document.getElementById("opt-section").classList.remove("hidden");
-    btn.textContent = "Fetch Data";
-    btn.disabled = false;
-  } catch (err) {
-    // CORS fallback — try CORS proxy
-    status.textContent = `Direct fetch failed (${err.message}), trying proxy...`;
-    try {
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${range}&interval=${interval}`)}`;
-      const resp = await fetch(proxyUrl);
-      if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
-      const data = await resp.json();
-
-      if (!data.chart || !data.chart.result) throw new Error("No data from proxy");
-
-      const r = data.chart.result[0];
-      const ts = r.timestamp;
-      const q = r.indicators.quote[0];
-
-      currentCandles = [];
-      for (let i = 0; i < ts.length; i++) {
-        if (q.open[i] == null) continue;
-        currentCandles.push({
-          datetime: new Date(ts[i] * 1000),
-          open: q.open[i], high: q.high[i], low: q.low[i],
-          close: q.close[i], volume: q.volume[i],
-        });
-      }
-
-      status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars (via proxy) | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()}`;
-      document.getElementById("opt-section").classList.remove("hidden");
-    } catch (err2) {
-      status.innerHTML = `<span style="color:var(--red)">✗</span> Failed: ${err2.message}. Try uploading a CSV file instead.`;
-    }
-    btn.textContent = "Fetch Data";
-    btn.disabled = false;
+  } catch (e) {
+    // Expected CORS error — fall through to proxies
   }
+
+  // If direct failed, try each proxy
+  if (!data) {
+    status.textContent = "Direct fetch blocked (CORS). Trying proxies...";
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      const proxyUrl = CORS_PROXIES[i](yahooUrl);
+      status.textContent = `Trying proxy ${i + 1}/${CORS_PROXIES.length}...`;
+      try {
+        const resp = await fetch(proxyUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = await resp.json();
+        if (!data || !data.chart || !data.chart.result) {
+          data = null;
+          throw new Error("No data in response");
+        }
+        status.textContent = `Proxy ${i + 1} worked! Loading data...`;
+        break;
+      } catch (err) {
+        status.textContent = `Proxy ${i + 1} failed (${err.message}), trying next...`;
+        data = null;
+      }
+    }
+  }
+
+  if (!data) {
+    status.innerHTML = `<span style="color:var(--red)">✗</span> All fetch methods failed. Try uploading a CSV file instead.`;
+    btn.textContent = "Fetch Data";
+    btn.disabled = false;
+    return;
+  }
+
+  // Parse data
+  const r = data.chart.result[0];
+  const ts = r.timestamp;
+  const q = r.indicators.quote[0];
+
+  currentCandles = [];
+  for (let i = 0; i < ts.length; i++) {
+    if (q.open[i] == null) continue;
+    currentCandles.push({
+      datetime: new Date(ts[i] * 1000),
+      open: q.open[i], high: q.high[i], low: q.low[i],
+      close: q.close[i], volume: q.volume[i],
+    });
+  }
+
+  if (currentCandles.length === 0) {
+    status.innerHTML = `<span style="color:var(--red)">✗</span> No valid candles found in data.`;
+    btn.textContent = "Fetch Data";
+    btn.disabled = false;
+    return;
+  }
+
+  status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
+  document.getElementById("opt-section").classList.remove("hidden");
+  btn.textContent = "Fetch Data";
+  btn.disabled = false;
 }
 
 // === CSV UPLOAD ===
@@ -167,17 +190,19 @@ function runOptimization() {
   worker.postMessage({ candles: currentCandles, method, nTrials, step, minTrades, objective });
 }
 
-// === DISPLAY RESULTS ===
+// === DISPLAY RESULTS — TOP 7 ===
 
 function displayResults(results, objective) {
   const section = document.getElementById("results-section");
   section.classList.remove("hidden");
 
-  // Top metrics
-  const top = results[0];
+  // Show top 7 results
+  const top7 = results.slice(0, 7);
+  const top = top7[0];
   const metricsGrid = document.getElementById("topMetrics");
   const pf = top.profitFactor === 999.99 ? "∞" : top.profitFactor.toFixed(2);
 
+  // Top result metrics
   metricsGrid.innerHTML = `
     <div class="metric-box"><div class="label">Net P&L</div><div class="value green">${top.netPnl.toFixed(1)}</div></div>
     <div class="metric-box"><div class="label">Return %</div><div class="value green">${top.returnPct.toFixed(2)}%</div></div>
@@ -189,7 +214,7 @@ function displayResults(results, objective) {
     <div class="metric-box"><div class="label">Avg Trade</div><div class="value">${top.avgTrade.toFixed(1)}</div></div>
   `;
 
-  // Params for top result
+  // Top result parameters
   const p = top.params;
   metricsGrid.innerHTML += `
     <div class="metric-box"><div class="label">Engulfing Min</div><div class="value">${p.engulfing_min_body}</div></div>
@@ -200,7 +225,7 @@ function displayResults(results, objective) {
     <div class="metric-box"><div class="label">TSL Step</div><div class="value">${p.increase_tsl_by}</div></div>
   `;
 
-  // Equity chart
+  // Equity chart for #1 result
   if (top.equityCurve) {
     const ctx = document.getElementById("equityChart").getContext("2d");
     if (equityChart) equityChart.destroy();
@@ -230,9 +255,9 @@ function displayResults(results, objective) {
     });
   }
 
-  // Results table
+  // Results table — top 7
   const tbody = document.getElementById("resultsBody");
-  tbody.innerHTML = results.slice(0, 50).map((r, i) => {
+  tbody.innerHTML = top7.map((r, i) => {
     const rp = r.params;
     const rpf = r.profitFactor === 999.99 ? "∞" : r.profitFactor.toFixed(2);
     return `<tr ${i === 0 ? 'class="highlight"' : ""}>
@@ -253,7 +278,7 @@ function displayResults(results, objective) {
     </tr>`;
   }).join("");
 
-  // Trade log
+  // Trade log for #1 result
   const tradesSection = document.getElementById("trades-section");
   const tradesBody = document.getElementById("tradesBody");
   if (top.trades && top.trades.length > 0) {
