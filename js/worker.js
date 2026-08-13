@@ -15,8 +15,8 @@ self.onmessage = function(e) {
     results = optimizeRandom(candles, nTrials, minTrades, objective);
   }
 
-  // Strip equity curves from all but top 10 to save memory
-  const top = results.slice(0, 50).map(r => {
+  // Keep top 50, but only attach equityCurve + trades to top 7
+  const top = results.slice(0, 50).map((r, idx) => {
     return {
       params: r.params,
       netPnl: r.netPnl,
@@ -29,10 +29,35 @@ self.onmessage = function(e) {
       avgTrade: r.avgTrade,
       returnPct: r.returnPct,
       sharpe: r.sharpe,
-      equityCurve: results.indexOf(r) < 10 ? r.equityCurve : null,
-      trades: results.indexOf(r) < 10 ? r.trades : null,
+      equityCurve: idx < 7 ? r.equityCurve : null,
+      trades: idx < 7 ? r.trades : null,
     };
   });
 
   self.postMessage({ type: "done", results: top });
 };
+
+/**
+ * Random search with progress updates.
+ */
+function optimizeRandom(candles, nTrials, minTrades, objective) {
+  const results = [];
+  for (let i = 0; i < nTrials; i++) {
+    const params = {};
+    for (const name of PARAM_NAMES) {
+      params[name] = Math.floor(Math.random() * 100);
+    }
+    const result = runBacktest(candles, params);
+    if (result.totalTrades >= minTrades) {
+      let score = result[objective];
+      if (score === Infinity) score = 1e9;
+      result._score = score;
+      results.push(result);
+    }
+    if ((i + 1) % 100 === 0) {
+      self.postMessage({ type: "progress", count: i + 1, total: nTrials });
+    }
+  }
+  results.sort((a, b) => b._score - a._score);
+  return results;
+}
