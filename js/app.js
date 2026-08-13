@@ -1,7 +1,7 @@
 /**
  * Main app logic — handles data fetching, UI updates, and optimization.
  * Fetches market data via the built-in Cloudflare Worker CORS proxy.
- * Supports custom From/To date range.
+ * Uses From/To date pickers converted to Yahoo Finance range strings.
  */
 
 let currentCandles = [];
@@ -11,11 +11,30 @@ let equityChart = null;
 
 function initDefaultDates() {
   const today = new Date();
-  const sixtyDaysAgo = new Date();
-  sixtyDaysAgo.setDate(today.getDate() - 60);
+  const ninetyDaysAgo = new Date();
+  ninetyDaysAgo.setDate(today.getDate() - 90);
 
   document.getElementById("toDate").value = today.toISOString().split("T")[0];
-  document.getElementById("fromDate").value = sixtyDaysAgo.toISOString().split("T")[0];
+  document.getElementById("fromDate").value = ninetyDaysAgo.toISOString().split("T")[0];
+}
+
+// === Convert From/To dates to Yahoo Finance range string ===
+
+function dateRangeToYahooRange(fromDate, toDate) {
+  const from = new Date(fromDate);
+  const to = new Date(toDate);
+  const diffDays = Math.round((to - from) / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 1) return "1d";
+  if (diffDays <= 5) return "5d";
+  if (diffDays <= 30) return "1mo";
+  if (diffDays <= 90) return "3mo";
+  if (diffDays <= 180) return "6mo";
+  if (diffDays <= 365) return "1y";
+  if (diffDays <= 730) return "2y";
+  if (diffDays <= 1825) return "5y";
+  if (diffDays <= 3650) return "10y";
+  return "max";
 }
 
 // === DATA FETCHING ===
@@ -33,26 +52,29 @@ async function fetchData() {
     return;
   }
 
-  const period1 = Math.floor(new Date(fromDate).getTime() / 1000);
-  const period2 = Math.floor(new Date(toDate).getTime() / 1000);
-
-  if (period2 <= period1) {
+  if (new Date(toDate) <= new Date(fromDate)) {
     status.innerHTML = '<span style="color:var(--red)">✗</span> To Date must be after From Date.';
     return;
   }
 
+  // Convert date range to Yahoo Finance range string
+  const range = dateRangeToYahooRange(fromDate, toDate);
+
   btn.disabled = true;
   btn.textContent = "Fetching...";
-  status.textContent = `Fetching ${symbol} ${interval} data from ${fromDate} to ${toDate}...`;
+  status.textContent = `Fetching ${symbol} ${interval} data (range: ${range})...`;
 
   try {
-    // Call the built-in Cloudflare Worker CORS proxy with period1/period2
-    const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&period1=${period1}&period2=${period2}`;
+    // Call the built-in Cloudflare Worker CORS proxy
+    const proxyUrl = `/api/yahoo?sym=${encodeURIComponent(symbol)}&interval=${interval}&range=${range}`;
     const resp = await fetch(proxyUrl);
     if (!resp.ok) throw new Error(`Proxy HTTP ${resp.status}`);
     const data = await resp.json();
 
-    if (!data.chart || !data.chart.result) throw new Error("No data returned");
+    if (!data.chart || !data.chart.result) {
+      const errMsg = data.chart?.error?.description || "No data returned";
+      throw new Error(errMsg);
+    }
 
     const r = data.chart.result[0];
     const ts = r.timestamp;
@@ -68,7 +90,14 @@ async function fetchData() {
       });
     }
 
-    if (currentCandles.length === 0) throw new Error("No valid candles");
+    if (currentCandles.length === 0) throw new Error("No valid candles in response");
+
+    // Filter candles to the selected date range
+    const fromMs = new Date(fromDate).getTime();
+    const toMs = new Date(toDate).getTime() + 86400000; // include full To day
+    currentCandles = currentCandles.filter(c => c.datetime.getTime() >= fromMs && c.datetime.getTime() <= toMs);
+
+    if (currentCandles.length === 0) throw new Error("No candles in selected date range");
 
     status.innerHTML = `<span style="color:var(--green)">✓</span> Loaded ${currentCandles.length} bars | ${currentCandles[0].datetime.toLocaleDateString()} → ${currentCandles[currentCandles.length-1].datetime.toLocaleDateString()} | Price: ${currentCandles[0].close.toFixed(2)} → ${currentCandles[currentCandles.length-1].close.toFixed(2)}`;
     document.getElementById("opt-section").classList.remove("hidden");
