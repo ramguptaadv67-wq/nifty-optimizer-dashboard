@@ -166,8 +166,7 @@ function runBacktest(candles, params) {
 }
 
 /**
- * Bayesian-style optimization using random sampling + refinement.
- * Pure JS, runs in browser via Web Worker for non-blocking UI.
+ * Random search with progress updates.
  */
 function optimizeRandom(candles, nTrials, minTrades, objective) {
   const results = [];
@@ -183,18 +182,33 @@ function optimizeRandom(candles, nTrials, minTrades, objective) {
       result._score = score;
       results.push(result);
     }
+    if ((i + 1) % 100 === 0) {
+      self.postMessage({ type: "progress", count: i + 1, total: nTrials });
+    }
   }
   results.sort((a, b) => b._score - a._score);
   return results;
 }
 
 /**
- * Grid search with step size.
+ * Grid search using band ranges.
+ * Bands: "0-20" (step 5), "20-40" (step 5), "40-99" (step 10), "all" (step 20)
  */
-function optimizeGrid(candles, step, minTrades, objective) {
-  const results = [];
+function optimizeGrid(candles, band, minTrades, objective) {
+  let lo, hi, step;
+  switch (band) {
+    case "0-20":  lo = 0;  hi = 20; step = 5;  break;
+    case "20-40": lo = 20; hi = 40; step = 5;  break;
+    case "40-99": lo = 40; hi = 99; step = 10; break;
+    case "all":
+    default:      lo = 0;  hi = 99; step = 20; break;
+  }
+
+  // Build the range of values for this band
   const range = [];
-  for (let v = 0; v < 100; v += step) range.push(v);
+  for (let v = lo; v <= hi; v += step) range.push(v);
+
+  const results = [];
   const total = Math.pow(range.length, 6);
   let count = 0;
 
@@ -216,7 +230,7 @@ function optimizeGrid(candles, step, minTrades, objective) {
                 result._score = score;
                 results.push(result);
               }
-              if (count % 1000 === 0) postMessage({ type: "progress", count, total });
+              if (count % 500 === 0) postMessage({ type: "progress", count, total });
             }
           }
         }
