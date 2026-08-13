@@ -12,7 +12,7 @@
 <header>
   <h1>NIFTY Engulfing-Doji-TSL Optimizer</h1>
   <p>Sweep all 6 parameters 0-99 — find the best config across any timeframe</p>
-  <p class="version">v2.0</p>
+  <p class="version">v2.1</p>
 </header>
 
 <section id="data-section" class="card">
@@ -43,15 +43,12 @@
       </select>
     </div>
     <div class="input-group">
-      <label>History Range</label>
-      <select id="range">
-        <option value="1d">1 Day</option>
-        <option value="7d">7 Days</option>
-        <option value="30d">30 Days</option>
-        <option value="60d" selected>60 Days</option>
-        <option value="6mo">6 Months</option>
-        <option value="1y">1 Year</option>
-      </select>
+      <label>From Date</label>
+      <input type="date" id="fromDate">
+    </div>
+    <div class="input-group">
+      <label>To Date</label>
+      <input type="date" id="toDate">
     </div>
     <button id="fetchBtn" class="btn-primary">Fetch Data</button>
     <label class="upload-label">or upload CSV
@@ -68,16 +65,21 @@
       <label>Method</label>
       <select id="method">
         <option value="random">Random Search (fast)</option>
-        <option value="grid">Grid Search (exhaustive)</option>
+        <option value="grid">Grid Search (bands)</option>
       </select>
     </div>
     <div class="input-group" id="trialsGroup">
       <label>Trials</label>
       <input type="number" id="trials" value="2000" min="100" max="100000" step="100">
     </div>
-    <div class="input-group hidden" id="stepGroup">
-      <label>Grid Step</label>
-      <input type="number" id="step" value="25" min="5" max="50" step="5">
+    <div class="input-group hidden" id="bandGroup">
+      <label>Range Band</label>
+      <select id="band">
+        <option value="0-20">0 – 20 (step 5)</option>
+        <option value="20-40">20 – 40 (step 5)</option>
+        <option value="40-99">40 – 99 (step 10)</option>
+        <option value="all">All 0 – 99 (step 20)</option>
+      </select>
     </div>
     <div class="input-group">
       <label>Objective</label>
@@ -145,7 +147,7 @@
 </section>
 
 <footer>
-  <p>NIFTY Engulfing-Doji-TSL Optimizer v2.0 — data fetched via Cloudflare Worker proxy, optimization runs in your browser.</p>
+  <p>NIFTY Engulfing-Doji-TSL Optimizer v2.1 — data fetched via Cloudflare Worker proxy, optimization runs in your browser.</p>
   <p>For educational purposes only. Not financial advice.</p>
 </footer>
 
